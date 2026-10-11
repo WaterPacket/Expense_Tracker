@@ -4,10 +4,6 @@ from connection import connection
 
 from fastapi import HTTPException
 
-from DB_Switching import table_name as db_table_name
-
-table_name=db_table_name
-
 def search_expense(uid,date_of_exp):
 #query parameter the parameter for the method will be sent directly to the method
 # from http request
@@ -15,11 +11,11 @@ def search_expense(uid,date_of_exp):
     conn=connection()
     cursor=conn.cursor()
     try:
-     cursor.execute(f"select * from {table_name} where user_id=%s and date_of_expense=%s",(uid,date_of_exp))
+     cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s and date_of_expense=%s order by sno asc",(uid,date_of_exp))
      outcome=cursor.fetchall()
      list_=outcome
      if not list_:
-         raise HTTPException(status_code=404,detail="There is no expense on this date ")
+         return []
      output=[]
      for tuple_value in list_:
          tuple_ind=0
@@ -34,8 +30,9 @@ def search_expense(uid,date_of_exp):
              tuple_ind+=1
          output.append(dict_)
      return output
-    except psy.DatabaseError as error :
-     print(error)
+    except psy.OperationalError:
+        raise HTTPException(status_code=503, detail="There is a issue in DB try after sometime")
+    except psy.DatabaseError :
      raise HTTPException(status_code=500,detail="There is a internal problem in db ")
     finally:
         cursor.close()

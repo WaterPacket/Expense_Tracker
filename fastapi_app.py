@@ -1,5 +1,10 @@
+import os
+from dotenv import load_dotenv
+from pathlib import Path
+load_dotenv(Path(__file__).parent/"secret_details.env")
 from datetime import date
 import jwt
+from decimal import Decimal
 from add_expense    import add_expense
 from view_expense   import view_expenses
 from update_expense import update_expense
@@ -14,6 +19,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 
 
+jwt_key=os.getenv("JWT_SECRET_KEY")
 
 class Login_Validation(BaseModel):
     user_name:str=Field(min_length=8,max_length=24)
@@ -26,13 +32,13 @@ class User_Registration(BaseModel):
 class Add_Expense(BaseModel):
     category:str
     #checking the value even its integer it must be >0.
-    amount:float=Field(gt=0)
+    amount:Decimal=Field(gt=0)
     description:str
     date_of_expense:date
 
 class Update_Expense(BaseModel):
     sno:int=Field(gt=0)
-    amount:int=Field(gt=0)
+    amount:Decimal=Field(gt=0)
 
 class Delete_Expense(BaseModel):
     sno:int=Field(gt=0)
@@ -43,7 +49,7 @@ class Search_expense(BaseModel):
 class res_get_expense(BaseModel):
     sno:int
     category:str
-    amount:float
+    amount:Decimal=Field(gt=0)
     description:str
     date_of_expense:date
 
@@ -54,7 +60,7 @@ security=HTTPBearer()
 def extract_uid(cred = Depends(security)):
  try:
     token=cred.credentials
-    uid=jwt.decode(token,"secret_key","HS256")
+    uid=jwt.decode(token,jwt_key,algorithms=["HS256"])
     return uid["user_id"]
  except jwt.InvalidTokenError:
      raise HTTPException(status_code=401,detail="Invalid token")
@@ -72,10 +78,10 @@ def update__expense(data:Update_Expense,uid=Depends(extract_uid)):
     return update_expense(data,uid)
 
 @app.delete("/delete-expense")
-def delete__expense(data:Delete_Expense,uid=Depends(extract_uid)):
-    return delete_expense(data,uid)
+def delete__expense(sno:int,uid=Depends(extract_uid)):
+    return delete_expense(sno,uid)
 
-@app.get("/search-expense")
+@app.get("/search-expense",response_model=list[res_get_expense])
 def search__expense(date_of_expense:date,uid=Depends(extract_uid)):
     return search_expense(uid,date_of_expense)
 

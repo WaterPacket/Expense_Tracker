@@ -1,12 +1,10 @@
 import os
-
 import jwt
 from fastapi.testclient import TestClient
-from connection import connection
 from fastapi_app import app
-from DB_Switching import table_name
-
 client=TestClient(app)
+
+
 
 # ===================================== TESTING THE REGISTRATION BEHAVIOUR ==========================================
 
@@ -18,6 +16,7 @@ def test_without_username():
 def test_without_password():
     response=client.post("/user-registration",
                          json={"user_name":"12345678"})
+
     assert response.status_code==422
 
 def test_short_invalid_username():
@@ -52,19 +51,22 @@ def test_valid_username_long_invalid_password():
 #     response=client.post("/user-registration",json={"user_name":"nandamuri_fuk","password":"12345678"})
 #     assert response.status_code==200
 
-def test_registration_with_existing_username():
-    response=client.post("/user-registration",
-                         json={"user_name":"lanja-koduku",
-                               "password":"12345678"})
-    assert response.status_code==409
-
 def test_valid_username_valid_password():
     response=client.post("/user-registration",
                          json={"user_name": "sk_sabir",
                                "password": "12345678"}
                          )
+    print(response.text)
     assert response.status_code==200
     assert response.json()=="User Registration Successful"
+
+
+def test_registration_with_existing_username():
+    response=client.post("/user-registration",
+                         json={"user_name":"sk_sabir",
+                               "password":"12345678"})
+    assert response.status_code==409
+
 
 
 # ================================== TESTING THE LOGIN BEHAVIOUR ==================================================
@@ -118,12 +120,11 @@ def test_login_valid_username_invalid_password():
 
 def test_login_valid_username_valid_password():
     response=client.post("/user-login",
-                         json={"user_name":"head_sir_lanja",
+                         json={"user_name":"sk_sabir",
                                "password":"12345678"})
     assert response.status_code==200
     token=response.json()
     assert isinstance(token,str)
-    assert token
 
 # ========================== TESTING THE ADD-EXPENSE END-POINT ============================================
 
@@ -311,9 +312,9 @@ def test_view_exp_with_invalid_token():
                          headers=header_data)
     assert response.status_code==401
 
-def test_view_exp_with_valid_token():
+def test_view_exp_with_valid_token(cursor):
     uid_token=client.post("user-login",
-                          json={"user_name":"sk_sabir",
+                          json={"user_name":"user_one",
                                 "password":"12345678"})
     uid_token=uid_token.json()
     header_data={"Authorization":f"Bearer {uid_token}"}
@@ -334,13 +335,10 @@ def test_view_exp_with_valid_token():
             assert col_name == keys[key]
             key = key + 1
 
-    con=connection()
-    cursor=con.cursor()
-
     uid_tkn=uid_token
-    uid_dict=jwt.decode(uid_tkn,"secret_key","HS256")
+    uid_dict=jwt.decode(uid_tkn,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid_dict["user_id"]
-    cursor.execute(f"select sno,category,amount,description,date_of_expense from {table_name} where user_id=%s order by sno asc",
+    cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s order by sno asc",
                    (uid,))
     user_expenses=cursor.fetchall()
     dict_values = []
@@ -355,17 +353,13 @@ def test_view_exp_with_valid_token():
             "date_of_expense": None}
 
         for key in dict_value:
-            if field_value==2 :
-                value=float(tuple_value[field_value])
-                dict_value[key]=value
-                field_value=field_value+1
-            elif field_value==4 :
-                value=str(tuple_value[field_value])
-                dict_value[key]=value
-                field_value=field_value+1
-            else:
-                dict_value[key] = tuple_value[field_value]
+            if(key=="amount" or key=="date_of_expense"):
+                dict_value[key] = str(tuple_value[field_value])
                 field_value =field_value+ 1
+            else:
+                dict_value[key] = (tuple_value[field_value])
+                field_value =field_value+ 1
+
         dict_values.append(dict_value)
 
     assert response==dict_values
@@ -383,7 +377,7 @@ def test_update_exp_without_token():
 
 def test_update_exp_with_invalid_token():
  jwt_token = client.post("/user-login",
-                         json={"user_name": "sk_sabir",
+                         json={"user_name": "user1",
                                "password": "12345678"})
  jwt_token = jwt_token.json()
  header = {"Authorization": f"Bearer {jwt_token}1"}
@@ -485,9 +479,9 @@ def test_update_exp_valid_tkn_valid_amount_invalid_sno():
                         )
     assert response.status_code==404
 
-def test_update_exp_valid_tkn_valid_amount_valid_sno():
+def test_update_exp_valid_tkn_valid_amount_valid_sno(cursor):
     jwt_token = client.post("/user-login",
-                            json={"user_name": "sk_sabir",
+                            json={"user_name": "user_one",
                                   "password": "12345678"})
     header=jwt_token.json()
     user_input={"sno":1,"amount":1000}
@@ -499,97 +493,15 @@ def test_update_exp_valid_tkn_valid_amount_valid_sno():
     assert response.status_code==200
     assert response.json()=="Updated the value successfully"
 
-    jwt_uid=jwt.decode(jwt_token.json(),"secret_key","HS256")
+    jwt_uid=jwt.decode(jwt_token.json(),os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=jwt_uid["user_id"]
-    con=connection()
-    cursor=con.cursor()
-    cursor.execute(f"select amount from {table_name}  where user_id=%s and sno=%s",(uid,user_input["sno"]))
+    cursor.execute("select amount from expenses where user_id=%s and sno=%s",(uid,user_input["sno"]))
     db_amount=cursor.fetchone()
-    db_amount=float(db_amount[0])
+    db_amount=(db_amount[0])
     assert db_amount==user_input["amount"]
 
 
-# ========================== TESTING BEHAVIOUR FOR DELETE EXPENSE ENDPOINT =============================================
 
-# for test-client doesnt support the json for delete method
-# so we are using request method where we can pass the request to endpoint
-
-def test_delete_exp_without_token():
-    response = client.request("delete","/delete-expense",
-                                 json={"sno": 10}
-                             )
-    assert response.status_code == 401
-
-def test_delete_exp_with_invalid_token():
- jwt_token = client.post("/user-login",
-                         json={"user_name": "sk_sabir",
-                               "password": "12345678"})
- jwt_token = jwt_token.json()
- header = {"Authorization": f"Bearer {jwt_token}1"}
- response = client.request("delete","/delete-expense",
-                           json={"sno":10},
-                           headers=header
-                           )
- assert response.status_code == 401
-
-# ----------------------------- TESTING THE BEHAVIOUR WITH VALID TOKEN -------------------------------------
-
-def test_delete_exp_with_valid_token_no_sno():
-    jwt_token = client.post("/user-login",
-                            json={"user_name": "sk_sabir",
-                                  "password": "12345678"})
-    jwt_token = jwt_token.json()
-    header = {"Authorization": f"Bearer {jwt_token}"}
-    response = client.request("delete", "/delete-expense",
-                              headers=header
-                              )
-    assert response.status_code == 422
-
-def test_delete_exp_with_valid_token_invalid_sno_dt():
-    jwt_token = client.post("/user-login",
-                            json={"user_name": "sk_sabir",
-                                  "password": "12345678"})
-    jwt_token = jwt_token.json()
-    header = {"Authorization": f"Bearer {jwt_token}"}
-    response = client.request("delete", "/delete-expense",
-                              json={"sno": "ten"},
-                              headers=header
-                              )
-    assert response.status_code == 422
-
-def test_delete_exp_with_valid_token_invalid_sno():
-    jwt_token = client.post("/user-login",
-                            json={"user_name": "sk_sabir",
-                                  "password": "12345678"})
-    jwt_token = jwt_token.json()
-    header = {"Authorization": f"Bearer {jwt_token}"}
-    response = client.request("delete", "/delete-expense",
-                              json={"sno": 10000},
-                              headers=header
-                              )
-    assert response.status_code == 404
-
-def test_delete_exp_with_valid_token_valid_sno():
-    jwt_token = client.post("/user-login",
-                            json={"user_name": "sk_sabir",
-                                  "password": "12345678"})
-    jwt_token = jwt_token.json()
-    user_input = {"sno": 1}
-    header = {"Authorization": f"Bearer {jwt_token}"}
-    response = client.request("delete", "/delete-expense",
-                              json=user_input,
-                              headers=header
-                              )
-    assert response.status_code == 200
-    assert response.json()=="The expense is deleted successfully"
-    con=connection()
-    cursor=con.cursor()
-    uid_token=jwt_token
-    uid=jwt.decode(uid_token,"secret_key","HS256")
-    uid=uid["user_id"]
-    cursor.execute(f"select * from {table_name} where user_id=%s and sno=%s",(uid,user_input["sno"]))
-    db_data=cursor.fetchone()
-    assert db_data==None
 
 # ================================== TESTING THE SEARCH EXPENSE ENDPOINT =========================================
 
@@ -657,26 +569,25 @@ def test_search_exp_with_valid_token_valid_date_not_found():
     response = client.get("/search-expense",
                            params={"date_of_expense": "2000-01-01"}
                            , headers=header)
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()==[]
 
-def test_search_exp_with_valid_token_valid_date():
+def test_search_exp_with_valid_token_valid_date(cursor):
     jwt_token = client.post("/user-login",
-                            json={"user_name": "sk_sabir",
+                            json={"user_name": "user_two",
                                   "password": "12345678"})
     jwt_token = jwt_token.json()
     header = {"Authorization": f"Bearer {jwt_token}"}
-    user_input={"date_of_expense":"2026-09-01"}
+    user_input={"date_of_expense":"2026-09-02"}
     response = client.get("/search-expense",
                               params=user_input
                               ,headers=header)
 
     assert response.status_code == 200
-    con=connection()
-    cursor=con.cursor()
-    uid=jwt.decode(jwt_token,"secret_key","HS256")
+    uid=jwt.decode(jwt_token,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid["user_id"]
     date_of_expense=user_input["date_of_expense"]
-    cursor.execute(f"select * from {table_name} where user_id=%s and date_of_expense=%s",(uid,date_of_expense))
+    cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s and date_of_expense=%s order by sno asc ",(uid,date_of_expense))
     db_data=cursor.fetchall()
     output=[]
     list_=db_data
@@ -688,18 +599,96 @@ def test_search_exp_with_valid_token_valid_date():
                       "date_of_expense": None}
         tuple_ind=0
         for key in dict_value:
-            if tuple_ind==2:
-                dict_value[key]=float(tuple_value[tuple_ind])
-                tuple_ind=tuple_ind+1
-            elif tuple_ind==4:
+            if key=="amount" or key=="date_of_expense":
                 dict_value[key]=str(tuple_value[tuple_ind])
                 tuple_ind=tuple_ind+1
             else:
-                dict_value[key]=tuple_value[tuple_ind]
-                tuple_ind=tuple_ind+1
+                dict_value[key] = tuple_value[tuple_ind]
+                tuple_ind = tuple_ind + 1
         output.append(dict_value)
 
     assert output==response.json()
+
+
+# ========================== TESTING BEHAVIOUR FOR DELETE EXPENSE ENDPOINT =============================================
+
+# for test-client doesnt support the json for delete method
+# so we are using request method where we can pass the request to endpoint
+
+def test_delete_exp_without_token():
+    response = client.request("delete","/delete-expense",
+                                 json={"sno": 10}
+                             )
+    assert response.status_code == 401
+
+def test_delete_exp_with_invalid_token():
+ jwt_token = client.post("/user-login",
+                         json={"user_name": "sk_sabir",
+                               "password": "12345678"})
+ jwt_token = jwt_token.json()
+ header = {"Authorization": f"Bearer {jwt_token}1"}
+ response = client.request("delete","/delete-expense",
+                           params={"sno":10},
+                           headers=header
+                           )
+ assert response.status_code == 401
+
+# ----------------------------- TESTING THE BEHAVIOUR WITH VALID TOKEN -------------------------------------
+
+def test_delete_exp_with_valid_token_no_sno():
+    jwt_token = client.post("/user-login",
+                            json={"user_name": "sk_sabir",
+                                  "password": "12345678"})
+    jwt_token = jwt_token.json()
+    header = {"Authorization": f"Bearer {jwt_token}"}
+    response = client.request("delete", "/delete-expense",
+                              headers=header
+                              )
+    assert response.status_code == 422
+
+def test_delete_exp_with_valid_token_invalid_sno_dt():
+    jwt_token = client.post("/user-login",
+                            json={"user_name": "sk_sabir",
+                                  "password": "12345678"})
+    jwt_token = jwt_token.json()
+    header = {"Authorization": f"Bearer {jwt_token}"}
+    response = client.request("delete", "/delete-expense",
+                              params={"sno": "ten"},
+                              headers=header
+                              )
+    assert response.status_code == 422
+
+def test_delete_exp_with_valid_token_invalid_sno():
+    jwt_token = client.post("/user-login",
+                            json={"user_name": "sk_sabir",
+                                  "password": "12345678"})
+    jwt_token = jwt_token.json()
+    header = {"Authorization": f"Bearer {jwt_token}"}
+    response = client.request("delete", "/delete-expense",
+                              params={"sno": 10000},
+                              headers=header
+                              )
+    assert response.status_code == 404
+
+def test_delete_exp_with_valid_token_valid_sno(cursor):
+    jwt_token = client.post("/user-login",
+                            json={"user_name": "user_three",
+                                  "password": "12345678"})
+    jwt_token = jwt_token.json()
+    user_input = {"sno": 3}
+    header = {"Authorization": f"Bearer {jwt_token}"}
+    response = client.request("delete", "/delete-expense",
+                              params=user_input,
+                              headers=header
+                              )
+    assert response.status_code == 200
+    assert response.json()=="The expense is deleted successfully"
+    uid_token=jwt_token
+    uid=jwt.decode(uid_token,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
+    uid=uid["user_id"]
+    cursor.execute("select * from expenses where user_id=%s and sno=%s",(uid,user_input["sno"]))
+    db_data=cursor.fetchone()
+    assert db_data==None
 
 
 

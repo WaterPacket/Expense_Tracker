@@ -1,9 +1,7 @@
 import psycopg2 as psy
 from fastapi import HTTPException
 from connection import connection
-from DB_Switching import table_name as db_table_name
-# this method was used to update the amount in expense based on its sno
-table_name=db_table_name
+
 def update_expense(data,uid):
  try:
   # building conn obj and building cursor obj to send query through the conn to db
@@ -11,7 +9,7 @@ def update_expense(data,uid):
   cursor=conn_obj.cursor()
   try:
     # sending the query to update the amount
-    cursor.execute(f"update {table_name} set amount=%s where user_id=%s and sno=%s",
+    cursor.execute("update expenses set amount=%s where user_id=%s and sno=%s",
                    (data.amount,uid,data.sno))
     # counts how many no of rows effected if the query is executed
     rows_effected=cursor.rowcount
@@ -22,8 +20,9 @@ def update_expense(data,uid):
      return("Updated the value successfully")
     else:
         raise HTTPException(status_code=404,detail="sno not found !")
+  except psy.OperationalError:
+      raise HTTPException(status_code=503, detail="There is a issue in DB try after sometime")
   except psy.DatabaseError:
-
       raise HTTPException(status_code=500,detail="Internal DB problem try again later")
   finally:
      # closing resources after usage

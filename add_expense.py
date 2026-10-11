@@ -4,10 +4,6 @@ from connection import connection
 
 from fastapi import HTTPException
 
-from DB_Switching import table_name as db_table_name
-
-table_name=db_table_name
-
 def add_expense(expense,id):
  try:
 
@@ -21,19 +17,19 @@ def add_expense(expense,id):
 
       # getting the expense data from the frontend Validated by the pydentic base model
       cursor.execute(
-      f"insert into {table_name} (user_id,category,amount,description,date_of_expense)values(%s,%s,%s,%s,%s)",
+      "insert into expenses (user_id,category,amount,description,date_of_expense)values(%s,%s,%s,%s,%s)",
       (id,expense.category,expense.amount,expense.description,expense.date_of_expense)
       )
       # we had to commit the connection.obj when our query make changes in the db .
       conn.commit()
       return ("Expense added successfully")
 
+  except psy.OperationalError:
+      raise HTTPException(status_code=503, detail="There is a issue in DB try after sometime")
   except psy.DatabaseError:
-
    raise HTTPException(status_code=500, detail="Internal DB problem try again later")
 
   # closing the resources after the operation is completed
-
   finally:
       cursor.close()
       conn.close()
