@@ -1,6 +1,6 @@
-
 import psycopg2 as psy
-
+from contextlib import contextmanager
+from fastapi import HTTPException
 import os
 
 # this method is used to connect the py with db and creates a conn obj that provides access to the db
@@ -16,4 +16,15 @@ def connection():
     # else returns an operational error to the caller
     return conn
 
-
+@contextmanager
+def manage_connection_resources(cursor_type=None):
+ try:
+  channel=connection()
+  try:
+    cursor = channel.cursor(cursor_factory=cursor_type)
+    yield channel, cursor
+  finally:
+        cursor.close()
+        channel.close()
+ except psy.OperationalError:
+   raise HTTPException(status_code=503,detail="DB connection failure")

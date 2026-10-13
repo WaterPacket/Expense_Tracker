@@ -1,41 +1,15 @@
 import psycopg2 as psy
-
-from connection import connection
-
+from connection import manage_connection_resources
 from fastapi import HTTPException
-
 def add_expense(expense,id):
- try:
-
-  # try to build the connection obj
-  # build the cursor obj by which we pass querys to db through conn obj
-
-  conn=connection()
-  cursor = conn.cursor()
-
+ with manage_connection_resources() as (conn,cursor):
   try:
-
-      # getting the expense data from the frontend Validated by the pydentic base model
       cursor.execute(
       "insert into expenses (user_id,category,amount,description,date_of_expense)values(%s,%s,%s,%s,%s)",
-      (id,expense.category,expense.amount,expense.description,expense.date_of_expense)
-      )
-      # we had to commit the connection.obj when our query make changes in the db .
+      (id,expense.category,expense.amount,expense.description,expense.date_of_expense) )
       conn.commit()
       return ("Expense added successfully")
-
   except psy.OperationalError:
       raise HTTPException(status_code=503, detail="There is a issue in DB try after sometime")
   except psy.DatabaseError:
    raise HTTPException(status_code=500, detail="Internal DB problem try again later")
-
-  # closing the resources after the operation is completed
-  finally:
-      cursor.close()
-      conn.close()
-
- # if failed to build the connection obj we stop this operation
- # if its value validation we give chance to re enter but its a db connection issue user cant do anything
-
- except psy.OperationalError:
-     raise HTTPException(status_code=503, detail="There is a issue in DB try after sometime")

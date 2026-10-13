@@ -1,6 +1,9 @@
 import os
 import jwt
+from psycopg2.extras import RealDictCursor
 from fastapi.testclient import TestClient
+
+from Expense_Tracker.conftest import con
 from fastapi_app import app
 client=TestClient(app)
 
@@ -43,27 +46,17 @@ def test_valid_username_long_invalid_password():
                                "password":"1234567890123456789012345"})
     assert response.status_code==422
 
-#here by testing this case i found out a behaviour
-#when i ran this case with same successful registered users details the program showing error 409
-#i forgot to check how the application behave if i try to register with existing user_name
-
-# def test_valid_username_valid_password():#while executing change the details to test otherwise u will get a error
-#     response=client.post("/user-registration",json={"user_name":"nandamuri_fuk","password":"12345678"})
-#     assert response.status_code==200
-
 def test_valid_username_valid_password():
     response=client.post("/user-registration",
                          json={"user_name": "sk_sabir",
                                "password": "12345678"}
                          )
-    print(response.text)
     assert response.status_code==200
     assert response.json()=="User Registration Successful"
 
-
 def test_registration_with_existing_username():
     response=client.post("/user-registration",
-                         json={"user_name":"sk_sabir",
+                         json={"user_name":"user_one",
                                "password":"12345678"})
     assert response.status_code==409
 
@@ -312,57 +305,31 @@ def test_view_exp_with_invalid_token():
                          headers=header_data)
     assert response.status_code==401
 
-def test_view_exp_with_valid_token(cursor):
+def test_view_exp_with_valid_token():
     uid_token=client.post("user-login",
                           json={"user_name":"user_one",
                                 "password":"12345678"})
     uid_token=uid_token.json()
     header_data={"Authorization":f"Bearer {uid_token}"}
-    res=client.get("/view-expense",
+    response_frm_app=client.get("/view-expense",
                          headers=header_data)
-    response=res.json()
-
-    assert res.status_code==200 # checking if the operation succeded or not
-
+    response=response_frm_app.json()
+    assert response_frm_app.status_code==200 # checking if the operation succeded or not
     assert isinstance(response,list) # checking the output is a list or not
-
-    for r in response:
-        assert isinstance(r, dict)  # checking the elements in the list dicts or not
-        keys = list(r.keys())  # fields  of the response dict
-        key = 0
-        column_names = ["sno", "category", "amount", "description", "date_of_expense"]  # fields of dict
-        for col_name in column_names:  # checking the structure and looking does the key exists or not in a sequence
-            assert col_name == keys[key]
-            key = key + 1
 
     uid_tkn=uid_token
     uid_dict=jwt.decode(uid_tkn,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid_dict["user_id"]
+    cursor=con.cursor(cursor_factory=RealDictCursor)
     cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s order by sno asc",
                    (uid,))
     user_expenses=cursor.fetchall()
-    dict_values = []
-    list_values = user_expenses
-    for tuple_value in list_values:
-        field_value = 0
-        dict_value = {
-            "sno": None,
-            "category": None,
-            "amount": None,
-            "description": None,
-            "date_of_expense": None}
+    for exp in user_expenses:
+        for col in exp:
+            if col=="amount" or col=="date_of_expense":
+                exp[col]=str(exp[col])
 
-        for key in dict_value:
-            if(key=="amount" or key=="date_of_expense"):
-                dict_value[key] = str(tuple_value[field_value])
-                field_value =field_value+ 1
-            else:
-                dict_value[key] = (tuple_value[field_value])
-                field_value =field_value+ 1
-
-        dict_values.append(dict_value)
-
-    assert response==dict_values
+    assert response==user_expenses
 
 # ============================== TESTING THE BEHAVIOUR OF THE UPDATE ENDPOINT =================================================
 
@@ -562,7 +529,7 @@ def test_search_exp_with_valid_token_invalid_date():
 
 def test_search_exp_with_valid_token_valid_date_not_found():
     jwt_token = client.post("/user-login",
-                            json={"user_name": "sk_sabir",
+                            json={"user_name": "user_two",
                                   "password": "12345678"})
     jwt_token = jwt_token.json()
     header = {"Authorization": f"Bearer {jwt_token}"}
@@ -572,7 +539,7 @@ def test_search_exp_with_valid_token_valid_date_not_found():
     assert response.status_code == 200
     assert response.json()==[]
 
-def test_search_exp_with_valid_token_valid_date(cursor):
+def test_search_exp_with_valid_token_valid_date():
     jwt_token = client.post("/user-login",
                             json={"user_name": "user_two",
                                   "password": "12345678"})
@@ -587,27 +554,14 @@ def test_search_exp_with_valid_token_valid_date(cursor):
     uid=jwt.decode(jwt_token,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid["user_id"]
     date_of_expense=user_input["date_of_expense"]
+    cursor=con.cursor(cursor_factory=RealDictCursor)
     cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s and date_of_expense=%s order by sno asc ",(uid,date_of_expense))
-    db_data=cursor.fetchall()
-    output=[]
-    list_=db_data
-    for tuple_value in list_:
-        dict_value = {"sno": None,
-                      "category": None,
-                      "amount": None,
-                      "description": None,
-                      "date_of_expense": None}
-        tuple_ind=0
-        for key in dict_value:
+    expenses=cursor.fetchall()
+    for expense in expenses:
+        for key in expense:
             if key=="amount" or key=="date_of_expense":
-                dict_value[key]=str(tuple_value[tuple_ind])
-                tuple_ind=tuple_ind+1
-            else:
-                dict_value[key] = tuple_value[tuple_ind]
-                tuple_ind = tuple_ind + 1
-        output.append(dict_value)
-
-    assert output==response.json()
+                expense[key]=str(expense[key])
+    assert expenses == response.json()
 
 
 # ========================== TESTING BEHAVIOUR FOR DELETE EXPENSE ENDPOINT =============================================
