@@ -5,14 +5,14 @@ load_dotenv(Path(__file__).parent/"secret_details.env")
 from datetime import date
 import jwt
 from decimal import Decimal
-from add_expense    import add_expense
-from view_expense   import view_expenses
-from update_expense import update_expense
-from delete_expense import delete_expense
-from search_expense import search_expense
-from user_registration import user_registration
-from login_authentication import login_authentication
-from fastapi import FastAPI, Path
+from Operations import add_expense
+from Operations import view_expenses
+from Operations import update_expense
+from Operations import delete_expense
+from Operations import search_expense
+from Operations import user_registration
+from Operations import login_authentication
+from fastapi import FastAPI
 from pydantic import BaseModel,Field
 from fastapi.security import HTTPBearer
 from fastapi import Depends
