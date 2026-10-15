@@ -18,13 +18,17 @@ def connection():
 
 @contextmanager
 def manage_connection_resources(cursor_type=None):
+ cursor=None
  try:
   channel=connection()
   try:
     cursor = channel.cursor(cursor_factory=cursor_type)
     yield channel, cursor
   finally:
+      if not cursor==None:
         cursor.close()
         channel.close()
+      else:
+          channel.close()
  except psy.OperationalError:
    raise HTTPException(status_code=503,detail="DB connection failure")

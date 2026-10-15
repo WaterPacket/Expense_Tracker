@@ -48,7 +48,7 @@ def test_valid_username_long_invalid_password():
 
 def test_valid_username_valid_password():
     response=client.post("/user-registration",
-                         json={"user_name": "sk_sabir",
+                         json={"user_name": "sk_sabir_son",
                                "password": "12345678"}
                          )
     assert response.status_code==200
@@ -327,7 +327,7 @@ def test_view_exp_with_valid_token():
     for exp in user_expenses:
         for col in exp:
             if col=="amount" or col=="date_of_expense":
-                exp[col]=str(exp[col])
+                exp[col]=str(exp.get(col))
 
     assert response==user_expenses
 
