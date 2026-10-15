@@ -1,0 +1,12 @@
+# ============= REQUIRED PACKAGES TO RUN THE APPLICATION ===========
+
+
+fastapi
+uvicorn
+pydantic
+psycopg2-binary
+python-dotenv
+PyJWT
+bcrypt
+pytest
+httpx
