@@ -1,0 +1,8 @@
+# Environment Variables
+*.env
+
+# Python Unused Files
+__pycache__/
+
+# Test Unused Files
+.pytest_cache
