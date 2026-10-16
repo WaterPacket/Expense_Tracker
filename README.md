@@ -114,12 +114,13 @@ For protected endpoints, send the token in the header: `Authorization: Bearer <y
 
 ## Run Tests
 
+From inside the project folder:
+
 ```bash
-# Run from the parent directory containing the Expense_Tracker folder
-python -m pytest Expense_Tracker/test_fastapi_app.py
+pytest
 ```
 
-The tests use `test_details.env` to select `test_expense_tracker`. The test fixture truncates and reseeds `user_data` and `expenses`; confirm the test database configuration before running the suite.
+Pytest loads `secret_details.env` first, then loads `test_details.env` with override enabled so the test database setting takes precedence. Before opening a database connection, the `channel` fixture checks that `DB_DATABASE_NAME` is exactly `test_expense_tracker`. The `cursor` and `dict_cursor` fixtures use that shared connection. An autouse, session-scoped fixture truncates and reseeds `user_data` and `expenses` once per test session—not before each individual test. Run the test suite only against the dedicated test database: the `TRUNCATE` operation deletes existing rows from those tables.
 
 ## Project Structure
 
