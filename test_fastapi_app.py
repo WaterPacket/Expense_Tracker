@@ -1,9 +1,6 @@
 import os
 import jwt
-from psycopg2.extras import RealDictCursor
 from fastapi.testclient import TestClient
-
-from Expense_Tracker.conftest import con
 from fastapi_app import app
 client=TestClient(app)
 
@@ -296,7 +293,7 @@ def test_view_exp_without_token():
     assert response.status_code==401
 
 def test_view_exp_with_invalid_token():
-    uid_token=client.post("user-login",
+    uid_token=client.post("/user-login",
                           json={"user_name":"sk_sabir",
                                 "password":"12345678"})
     uid_token=uid_token.json()
@@ -305,8 +302,8 @@ def test_view_exp_with_invalid_token():
                          headers=header_data)
     assert response.status_code==401
 
-def test_view_exp_with_valid_token():
-    uid_token=client.post("user-login",
+def test_view_exp_with_valid_token(dict_cursor):
+    uid_token=client.post("/user-login",
                           json={"user_name":"user_one",
                                 "password":"12345678"})
     uid_token=uid_token.json()
@@ -320,10 +317,9 @@ def test_view_exp_with_valid_token():
     uid_tkn=uid_token
     uid_dict=jwt.decode(uid_tkn,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid_dict["user_id"]
-    cursor=con.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s order by sno asc",
+    dict_cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s order by sno asc",
                    (uid,))
-    user_expenses=cursor.fetchall()
+    user_expenses=dict_cursor.fetchall()
     for exp in user_expenses:
         for col in exp:
             if col=="amount" or col=="date_of_expense":
@@ -344,7 +340,7 @@ def test_update_exp_without_token():
 
 def test_update_exp_with_invalid_token():
  jwt_token = client.post("/user-login",
-                         json={"user_name": "user1",
+                         json={"user_name": "user_one",
                                "password": "12345678"})
  jwt_token = jwt_token.json()
  header = {"Authorization": f"Bearer {jwt_token}1"}
@@ -539,7 +535,7 @@ def test_search_exp_with_valid_token_valid_date_not_found():
     assert response.status_code == 200
     assert response.json()==[]
 
-def test_search_exp_with_valid_token_valid_date():
+def test_search_exp_with_valid_token_valid_date(dict_cursor):
     jwt_token = client.post("/user-login",
                             json={"user_name": "user_two",
                                   "password": "12345678"})
@@ -554,9 +550,8 @@ def test_search_exp_with_valid_token_valid_date():
     uid=jwt.decode(jwt_token,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid["user_id"]
     date_of_expense=user_input["date_of_expense"]
-    cursor=con.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s and date_of_expense=%s order by sno asc ",(uid,date_of_expense))
-    expenses=cursor.fetchall()
+    dict_cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s and date_of_expense=%s order by sno asc ",(uid,date_of_expense))
+    expenses=dict_cursor.fetchall()
     for expense in expenses:
         for key in expense:
             if key=="amount" or key=="date_of_expense":
