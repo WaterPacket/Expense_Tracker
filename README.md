@@ -7,7 +7,9 @@ A REST API built with **FastAPI and PostgreSQL** for registering users and manag
 
 - User registration with bcrypt password hashing and JWT login (30-minute token expiry)
 - Create, view, update, delete, and search expenses by date
-- JWT-protected endpoints that restrict expense queries to the authenticated user
+- Every expense has its own permanent `expense_id`, used for updating and deleting
+- Expense lists show a per-user serial number (`sno`) for easy reading
+- JWT-protected endpoints that restrict expense queries and changes to the authenticated user
 - Request validation with Pydantic
 - Database error handling and automated API tests with Pytest
 
@@ -42,30 +44,45 @@ pip install -r requirements.txt
 Create two separate databases: `expense_tracker` for the application and `test_expense_tracker` for tests. Run the following SQL in **each database** to create the tables and sequences expected by the application:
 
 ```sql
-CREATE SEQUENCE id;
-CREATE SEQUENCE sno_seq;
+CREATE SEQUENCE user_id_sec;
+CREATE SEQUENCE expense_id_sec START WITH 1000;
 
 CREATE TABLE user_data (
-    user_id       INTEGER NOT NULL DEFAULT nextval('id'::regclass),
+    user_id       INTEGER NOT NULL DEFAULT nextval('user_id_sec'::regclass),
     user_name     VARCHAR(40) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    CONSTRAINT pk PRIMARY KEY (user_id),
+    CONSTRAINT pk_user_id PRIMARY KEY (user_id),
     CONSTRAINT unq_name UNIQUE (user_name)
 );
 
 CREATE TABLE expenses (
-    sno             INTEGER NOT NULL DEFAULT nextval('sno_seq'::regclass),
     category        VARCHAR(25) NOT NULL,
     amount          NUMERIC NOT NULL,
     description     VARCHAR(50),
     date_of_expense DATE NOT NULL,
     user_id         INTEGER NOT NULL,
-    CONSTRAINT expenses_pkey PRIMARY KEY (sno),
-    CONSTRAINT foreign_key FOREIGN KEY (user_id) REFERENCES user_data(user_id)
+    expense_id      INTEGER NOT NULL DEFAULT nextval('expense_id_sec'::regclass),
+    CONSTRAINT pk PRIMARY KEY (expense_id),
+    CONSTRAINT fk FOREIGN KEY (user_id) REFERENCES user_data(user_id)
 );
+
+ALTER SEQUENCE user_id_sec OWNED BY user_data.user_id;
+ALTER SEQUENCE expense_id_sec OWNED BY expenses.expense_id;
 ```
 
-`user_data` stores each user's ID, unique username, and password hash. `expenses` stores each expense and links it to a user through `user_id`. The `description` column is nullable; the other listed columns are `NOT NULL`. The database has a primary key on each table, a unique constraint on `user_data.user_name`, and a foreign key from `expenses.user_id` to `user_data.user_id`.
+**Tables**
+
+- `user_data` stores each user's ID, unique username, and password hash.
+- `expenses` stores each expense and links it to a user through `user_id`.
+
+**Columns and keys**
+
+- `expense_id` is the primary key of `expenses`. It is generated from `expense_id_sec`, starts at 1000, and is unique across all users. It never changes, so it is safe to use for updates and deletes.
+- `sno` is **not** a column. It is calculated in the queries with `row_number()` each time expenses are listed (see [`sno` vs `expense_id`](#sno-vs-expense_id)).
+- `description` is nullable; the other columns are `NOT NULL`.
+- `user_data.user_name` has a unique constraint, and `expenses.user_id` is a foreign key to `user_data.user_id`.
+
+**Why `OWNED BY`:** the test setup runs `TRUNCATE ... RESTART IDENTITY`, which only resets sequences that are owned by a column of the truncated tables. Without the two `ALTER SEQUENCE ... OWNED BY` lines, the ids would keep counting up between test runs instead of starting again at 1000 (expenses) and 1 (users).
 
 **Validation note:** The current database schema does not have a `CHECK` constraint for positive amounts. The FastAPI/Pydantic request model validates that amounts are greater than zero when requests go through the API.
 
@@ -100,17 +117,61 @@ Open **http://127.0.0.1:8000/docs** to explore and try the endpoints with Swagge
 
 ## API Endpoints
 
-| Method | Endpoint | Purpose | Auth |
-|---|---|---|---|
-| `POST` | `/user-registration` | Register a user | No |
-| `POST` | `/user-login` | Log in and receive a JWT | No |
-| `POST` | `/add-expense` | Add an expense | Yes |
-| `GET` | `/view-expense` | List your expenses | Yes |
-| `PUT` | `/update-expense` | Update an expense amount | Yes |
-| `DELETE` | `/delete-expense?sno=1` | Delete an expense by serial number | Yes |
-| `GET` | `/search-expense?date_of_expense=2026-10-15` | Search by date | Yes |
+| Method | Endpoint | Input | Purpose | Auth |
+|---|---|---|---|---|
+| `POST` | `/user-registration` | JSON: `user_name`, `password` (8–24 characters each) | Register a user | No |
+| `POST` | `/user-login` | JSON: `user_name`, `password` | Log in and receive a JWT | No |
+| `POST` | `/add-expense` | JSON: `category`, `amount` (> 0), `description`, `date_of_expense` | Add an expense | Yes |
+| `GET` | `/view-expense` | none | List your expenses | Yes |
+| `PUT` | `/update-expense` | JSON: `expense_id`, `amount` (> 0) | Update the amount of one expense | Yes |
+| `DELETE` | `/delete-expense?expense_id=1000` | query: `expense_id` | Delete one expense | Yes |
+| `GET` | `/search-expense?date_of_expense=2026-10-15` | query: `date_of_expense` | List your expenses on that date | Yes |
 
 For protected endpoints, send the token in the header: `Authorization: Bearer <your_token>`.
+
+### `sno` vs `expense_id`
+
+- `sno` is a display number only. It is calculated per user (1, 2, 3, ...), ordered by date with the newest first. It changes when expenses are added or removed, so it must not be used to modify an expense.
+- `expense_id` is the permanent id of an expense. Use it with `/update-expense` and `/delete-expense`.
+- In `/search-expense`, `sno` is numbered within the search results, not within your full list.
+
+### Example response (`/view-expense` and `/search-expense`)
+
+```json
+[
+  {
+    "sno": 1,
+    "category": "food",
+    "amount": "250",
+    "description": "lunch",
+    "date_of_expense": "2026-10-15",
+    "expense_id": 1004
+  }
+]
+```
+
+### Update example
+
+```json
+PUT /update-expense
+{
+  "expense_id": 1004,
+  "amount": 300
+}
+```
+
+### Error responses
+
+| Status | Meaning |
+|---|---|
+| `401` | Missing, invalid, or expired token, or wrong username or password |
+| `404` | `expense_id` does not exist or belongs to another user |
+| `409` | Username already exists (registration) |
+| `422` | Invalid or missing input |
+| `500` | Internal database error |
+| `503` | Database connection failure |
+
+You can only update or delete your own expenses. Using another user's `expense_id` returns `404`, the same as an id that does not exist.
 
 ## Run Tests
 
@@ -121,6 +182,10 @@ pytest
 ```
 
 Pytest loads `secret_details.env` first, then loads `test_details.env` with override enabled so the test database setting takes precedence. Before opening a database connection, the `channel` fixture checks that `DB_DATABASE_NAME` is exactly `test_expense_tracker`. The `cursor` and `dict_cursor` fixtures use that shared connection. An autouse, session-scoped fixture truncates and reseeds `user_data` and `expenses` once per test session—not before each individual test. Run the test suite only against the dedicated test database: the `TRUNCATE` operation deletes existing rows from those tables.
+
+The seed data contains four users (`user_one`, `user_two`, `user_three`, `sk_sabir`) with one expense each. Because `expense_id_sec` starts at 1000 and is restarted by the truncate, their expenses always get ids 1000 to 1003, and several tests rely on these ids.
+
+The suite covers validation, token handling, and expense operations for every endpoint, plus ownership tests that check that updating or deleting another user's `expense_id` returns `404`.
 
 ## Project Structure
 

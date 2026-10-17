@@ -37,11 +37,8 @@ class Add_Expense(BaseModel):
     date_of_expense:date
 
 class Update_Expense(BaseModel):
-    sno:int=Field(gt=0)
+    expense_id:int=Field(gt=0)
     amount:Decimal=Field(gt=0)
-
-class Delete_Expense(BaseModel):
-    sno:int=Field(gt=0)
 
 class Search_expense(BaseModel):
     date_of_expense:date
@@ -52,6 +49,7 @@ class res_get_expense(BaseModel):
     amount:Decimal=Field(gt=0)
     description:str
     date_of_expense:date
+    expense_id:int
 
 app=FastAPI()
 
@@ -78,8 +76,8 @@ def update__expense(data:Update_Expense,uid=Depends(extract_uid)):
     return update_expense(data,uid)
 
 @app.delete("/delete-expense")
-def delete__expense(sno:int,uid=Depends(extract_uid)):
-    return delete_expense(sno,uid)
+def delete__expense(expense_id:int,uid=Depends(extract_uid)):
+    return delete_expense(expense_id,uid)
 
 @app.get("/search-expense",response_model=list[res_get_expense])
 def search__expense(date_of_expense:date,uid=Depends(extract_uid)):

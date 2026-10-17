@@ -78,7 +78,14 @@ def add_expense(expense,id):
 def view_expenses(uid):
  with manage_connection_resources(RealDictCursor) as (conn,cursor) :
   try:
-    cursor.execute("Select sno,category,amount,description,date_of_expense from expenses where user_id=%s order by sno asc",(uid,))
+    cursor.execute("""Select row_number() over (
+                                                order by date_of_expense desc,
+                                                         expense_id desc)as sno,
+                     category,amount,description,date_of_expense,expense_id
+                     from expenses
+                     where user_id=%s 
+                     order by date_of_expense desc,
+                              expense_id desc""",(uid,))
     expenses=cursor.fetchall()
     return expenses
   except psy.OperationalError:
@@ -93,14 +100,14 @@ def update_expense(data,uid):
 
   with manage_connection_resources() as (conn,cursor):
    try:
-    cursor.execute("update expenses set amount=%s where user_id=%s and sno=%s",
-                   (data.amount,uid,data.sno))
+    cursor.execute("update expenses set amount=%s where user_id=%s and expense_id=%s",
+                   (data.amount,uid,data.expense_id))
     rows_effected=cursor.rowcount
     if rows_effected>0:
      conn.commit()
      return("Updated the value successfully")
     else:
-        raise HTTPException(status_code=404,detail="sno not found !")
+        raise HTTPException(status_code=404,detail="expense not found")
    except psy.OperationalError:
       raise HTTPException(status_code=503, detail="There is a issue in DB try after sometime")
    except psy.DatabaseError:
@@ -111,9 +118,20 @@ def update_expense(data,uid):
 def search_expense(uid,date_of_exp):
  with manage_connection_resources(RealDictCursor) as (conn,cursor):
     try:
-     cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s and date_of_expense=%s order by sno asc",(uid,date_of_exp))
-     outcome=cursor.fetchall()
-     return outcome
+     cursor.execute("""select row_number()over( order by 
+                                                date_of_expense desc,
+                                                expense_id desc
+                                               ) as sno,
+                       category,amount,description,date_of_expense,expense_id 
+                       from expenses 
+                       where user_id=%s and date_of_expense=%s
+                       order by date_of_expense desc,
+                                expense_id desc""",(uid,date_of_exp))
+     if cursor.rowcount>0:
+      outcome=cursor.fetchall()
+      return outcome
+     else :
+        return []
     except psy.OperationalError:
         raise HTTPException(status_code=503, detail="There is a issue in DB try after sometime")
     except psy.DatabaseError :
@@ -122,15 +140,15 @@ def search_expense(uid,date_of_exp):
 
 #=============================================== DELETE EXPENSE ===============================================
 
-def delete_expense(sno,uid):
+def delete_expense(expense_id,uid):
     with manage_connection_resources() as (conn,cursor):
      try:
-       cursor.execute("delete from expenses where user_id=%s and sno=%s", (uid,sno))
+       cursor.execute("delete from expenses where user_id=%s and expense_id=%s", (uid,expense_id))
        if (cursor.rowcount > 0):
          conn.commit()
          return "The expense is deleted successfully"
        else:
-         raise HTTPException(status_code=404,detail="Given sno is invalid !")
+         raise HTTPException(status_code=404,detail="expense not found")
      except psy.OperationalError:
        raise HTTPException(status_code=503, detail="db connection problem")
      except psy.DatabaseError:

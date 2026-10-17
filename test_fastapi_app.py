@@ -1,6 +1,11 @@
 import os
+from email import header
+
 import jwt
 from fastapi.testclient import TestClient
+from pydantic import json
+from urllib3 import response
+
 from fastapi_app import app
 client=TestClient(app)
 
@@ -317,8 +322,16 @@ def test_view_exp_with_valid_token(dict_cursor):
     uid_tkn=uid_token
     uid_dict=jwt.decode(uid_tkn,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid_dict["user_id"]
-    dict_cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s order by sno asc",
-                   (uid,))
+    dict_cursor.execute("""select row_number() over(
+                                                    order by 
+                                                    date_of_expense desc,
+                                                    expense_id desc)as sno
+                                                    ,category,amount,description,date_of_expense,expense_id
+                            from expenses
+                            where user_id=%s
+                            order by date_of_expense desc,
+                                     expense_id desc""",(uid,)
+                        )
     user_expenses=dict_cursor.fetchall()
     for exp in user_expenses:
         for col in exp:
@@ -333,7 +346,7 @@ def test_view_exp_with_valid_token(dict_cursor):
 
 def test_update_exp_without_token():
     response = client.put("/update-expense",
-                           json={"sno": 10,
+                           json={"expense_id": 10,
                                  "amount": 1000}
                            )
     assert response.status_code == 401
@@ -345,7 +358,7 @@ def test_update_exp_with_invalid_token():
  jwt_token = jwt_token.json()
  header = {"Authorization": f"Bearer {jwt_token}1"}
  response = client.put("/update-expense",
-                           json={"sno": 10,
+                           json={"expense_id": 10,
                                  "amount": 1000},
                            headers=header
                            )
@@ -353,7 +366,7 @@ def test_update_exp_with_invalid_token():
 
 # ------------------------------------- TESTING BEHAVIOUR WITH VALID TOKEN -------------------------
 
-def test_update_exp_valid_tkn_no_sno():
+def test_update_exp_valid_tkn_no_exp_id():
     jwt_token = client.post("/user-login",
                             json={"user_name": "sk_sabir",
                                   "password": "12345678"})
@@ -372,19 +385,19 @@ def test_update_exp_valid_tkn_no_amount():
     header=jwt_token.json()
     header={"Authorization":f"Bearer {header}"}
     response=client.put("/update-expense",
-                        json={ "sno": 50},
+                        json={ "expense_id": 1000},
                         headers=header
                         )
     assert response.status_code==422
 
-def test_update_exp_valid_tkn_invalid_sno_dt():
+def test_update_exp_valid_tkn_invalid_exp_id_dt():
     jwt_token = client.post("/user-login",
                             json={"user_name": "sk_sabir",
                                   "password": "12345678"})
     header=jwt_token.json()
     header={"Authorization":f"Bearer {header}"}
     response=client.put("/update-expense",
-                        json={"sno": "tenssw",
+                        json={"expense_id": "tenssw",
                               "amount": 1000},
                         headers=header
                         )
@@ -397,20 +410,20 @@ def test_update_exp_valid_tkn_invalid_amount_dt():
     header=jwt_token.json()
     header={"Authorization":f"Bearer {header}"}
     response=client.put("/update-expense",
-                        json={"sno": "10",
+                        json={"expense_id": "1000",
                               "amount": "thousand"},
                         headers=header
                         )
     assert response.status_code==422
 
-def test_update_exp_valid_tkn_invalid_sno():
+def test_update_exp_valid_tkn_invalid_exp_id():
     jwt_token = client.post("/user-login",
                             json={"user_name": "sk_sabir",
                                   "password": "12345678"})
     header=jwt_token.json()
     header={"Authorization":f"Bearer {header}"}
     response=client.put("/update-expense",
-                        json={"sno": 100,
+                        json={"expense_id": 100,
                               "amount": 1000},
                         headers=header
                         )
@@ -423,31 +436,31 @@ def test_update_exp_valid_tkn_invalid_amount():
     header=jwt_token.json()
     header={"Authorization":f"Bearer {header}"}
     response=client.put("/update-expense",
-                        json={"sno": 10,
+                        json={"expense_id": 10,
                               "amount": 0},
                         headers=header
                         )
     assert response.status_code==422
 
-def test_update_exp_valid_tkn_valid_amount_invalid_sno():
+def test_update_exp_valid_tkn_valid_amount_invalid_exp_id():
     jwt_token = client.post("/user-login",
                             json={"user_name": "sk_sabir",
                                   "password": "12345678"})
     header=jwt_token.json()
     header={"Authorization":f"Bearer {header}"}
     response=client.put("/update-expense",
-                        json={"sno": 10000,
+                        json={"expense_id": 10000,
                               "amount": 10},
                         headers=header
                         )
     assert response.status_code==404
 
-def test_update_exp_valid_tkn_valid_amount_valid_sno(cursor):
+def test_update_exp_valid_tkn_valid_amount_valid_exp_id(cursor):
     jwt_token = client.post("/user-login",
                             json={"user_name": "user_one",
                                   "password": "12345678"})
     header=jwt_token.json()
-    user_input={"sno":1,"amount":1000}
+    user_input={"expense_id":1000,"amount":1000}
     header={"Authorization":f"Bearer {header}"}
     response=client.put("/update-expense",
                         json=user_input,
@@ -458,7 +471,7 @@ def test_update_exp_valid_tkn_valid_amount_valid_sno(cursor):
 
     jwt_uid=jwt.decode(jwt_token.json(),os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=jwt_uid["user_id"]
-    cursor.execute("select amount from expenses where user_id=%s and sno=%s",(uid,user_input["sno"]))
+    cursor.execute("select amount from expenses where user_id=%s and expense_id=%s",(uid,user_input["expense_id"]))
     db_amount=cursor.fetchone()
     db_amount=(db_amount[0])
     assert db_amount==user_input["amount"]
@@ -550,7 +563,15 @@ def test_search_exp_with_valid_token_valid_date(dict_cursor):
     uid=jwt.decode(jwt_token,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid["user_id"]
     date_of_expense=user_input["date_of_expense"]
-    dict_cursor.execute("select sno,category,amount,description,date_of_expense from expenses where user_id=%s and date_of_expense=%s order by sno asc ",(uid,date_of_expense))
+    dict_cursor.execute("""select row_number()over(
+                                                   order by date_of_expense desc,
+                                                            expense_id desc) as sno,
+                           category,amount,description,date_of_expense,expense_id
+                           from expenses 
+                           where user_id=%s and date_of_expense=%s 
+                           order by date_of_expense desc,
+                                    expense_id desc""",(uid,date_of_expense)
+                        )
     expenses=dict_cursor.fetchall()
     for expense in expenses:
         for key in expense:
@@ -566,7 +587,7 @@ def test_search_exp_with_valid_token_valid_date(dict_cursor):
 
 def test_delete_exp_without_token():
     response = client.request("delete","/delete-expense",
-                                 json={"sno": 10}
+                                 params={"expense_id": 10}
                              )
     assert response.status_code == 401
 
@@ -577,14 +598,14 @@ def test_delete_exp_with_invalid_token():
  jwt_token = jwt_token.json()
  header = {"Authorization": f"Bearer {jwt_token}1"}
  response = client.request("delete","/delete-expense",
-                           params={"sno":10},
+                           params={"expense_id":1003},
                            headers=header
                            )
  assert response.status_code == 401
 
 # ----------------------------- TESTING THE BEHAVIOUR WITH VALID TOKEN -------------------------------------
 
-def test_delete_exp_with_valid_token_no_sno():
+def test_delete_exp_with_valid_token_no_exp_id():
     jwt_token = client.post("/user-login",
                             json={"user_name": "sk_sabir",
                                   "password": "12345678"})
@@ -595,36 +616,36 @@ def test_delete_exp_with_valid_token_no_sno():
                               )
     assert response.status_code == 422
 
-def test_delete_exp_with_valid_token_invalid_sno_dt():
+def test_delete_exp_with_valid_token_invalid_exp_id_dt():
     jwt_token = client.post("/user-login",
                             json={"user_name": "sk_sabir",
                                   "password": "12345678"})
     jwt_token = jwt_token.json()
     header = {"Authorization": f"Bearer {jwt_token}"}
     response = client.request("delete", "/delete-expense",
-                              params={"sno": "ten"},
+                              params={"expense_id": "ten"},
                               headers=header
                               )
     assert response.status_code == 422
 
-def test_delete_exp_with_valid_token_invalid_sno():
+def test_delete_exp_with_valid_token_invalid_exp_id():
     jwt_token = client.post("/user-login",
                             json={"user_name": "sk_sabir",
                                   "password": "12345678"})
     jwt_token = jwt_token.json()
     header = {"Authorization": f"Bearer {jwt_token}"}
     response = client.request("delete", "/delete-expense",
-                              params={"sno": 10000},
+                              params={"expense_id": 10000},
                               headers=header
                               )
     assert response.status_code == 404
 
-def test_delete_exp_with_valid_token_valid_sno(cursor):
+def test_delete_exp_with_valid_token_valid_exp_id(cursor):
     jwt_token = client.post("/user-login",
                             json={"user_name": "user_three",
                                   "password": "12345678"})
     jwt_token = jwt_token.json()
-    user_input = {"sno": 3}
+    user_input = {"expense_id": 1002}
     header = {"Authorization": f"Bearer {jwt_token}"}
     response = client.request("delete", "/delete-expense",
                               params=user_input,
@@ -635,12 +656,26 @@ def test_delete_exp_with_valid_token_valid_sno(cursor):
     uid_token=jwt_token
     uid=jwt.decode(uid_token,os.getenv("JWT_SECRET_KEY"),algorithms=["HS256"])
     uid=uid["user_id"]
-    cursor.execute("select * from expenses where user_id=%s and sno=%s",(uid,user_input["sno"]))
+    cursor.execute("select * from expenses where user_id=%s and expense_id=%s",(uid,user_input["expense_id"]))
     db_data=cursor.fetchone()
     assert db_data==None
 
+#============================== OWNERSHIP TEST ===========================================
 
+def test_update_expense_of_other_user():
+    login_jwt=client.post("/user-login",json={
+                                           "user_name":"user_one",
+                                           "password":"12345678"})
+    jwt_token=login_jwt.json()
+    header={"Authorization":f"Bearer {jwt_token}"}
+    response=client.put("/update-expense",json={"expense_id":1003,"amount":2000},
+                                               headers=header)
+    assert response.status_code==404
 
-
-
-
+def test_delete_expense_of_other_user():
+    jwt_token=client.post("/user-login",json={"user_name":"user_one",
+                                                  "password":"12345678"})
+    jwt_token=jwt_token.json()
+    header={"Authorization":f"Bearer {jwt_token}"}
+    response=client.request("delete","/delete-expense",params={"expense_id":1003},headers=header)
+    assert response.status_code==404
