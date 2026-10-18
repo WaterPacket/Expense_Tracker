@@ -1,11 +1,6 @@
 import os
-from email import header
-
 import jwt
 from fastapi.testclient import TestClient
-from pydantic import json
-from urllib3 import response
-
 from fastapi_app import app
 client=TestClient(app)
 
